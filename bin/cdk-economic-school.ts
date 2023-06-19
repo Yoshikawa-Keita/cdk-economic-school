@@ -1,10 +1,22 @@
 #!/usr/bin/env node
 import 'source-map-support/register';
 import * as cdk from 'aws-cdk-lib';
-
-import { CdkEconomicSchoolStack } from '../lib/cdk-economic-school-stack';
+import {
+aws_secretsmanager as secretsManager,
+} from 'aws-cdk-lib';
+import { EcoEcsFargate } from '../lib/eco-ecs-fargate';
 
 const app = new cdk.App();
-new CdkEconomicSchoolStack(app, 'CdkEconomicSchoolStack', {
-  
+
+const secret = secretsManager.Secret.fromSecretNameV2(
+  app,
+  'secretsForEnv-id',
+  'secretsForEnv',
+);
+
+new EcoEcsFargate(app, 'EcoEcsFargate', {
+  env:{
+    account: secret.secretValueFromJson('AWS_ACCOUNT').toString(),
+    region: secret.secretValueFromJson('AWS_REGION').toString()
+  }
 });

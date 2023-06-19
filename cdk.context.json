@@ -1,0 +1,11 @@
+{
+  "availability-zones:account=957331864968:region=ap-northeast-1": [
+    "ap-northeast-1a",
+    "ap-northeast-1c",
+    "ap-northeast-1d"
+  ],
+  "hosted-zone:account=957331864968:domainName=economic-school.com:region=ap-northeast-1": {
+    "Id": "/hostedzone/Z023073837U6LPSVDADDX",
+    "Name": "economic-school.com."
+  }
+}
