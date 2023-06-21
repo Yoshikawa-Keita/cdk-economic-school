@@ -9,7 +9,7 @@ exports.sendVerificationEmailHandler = async function(event, context) {
 
   for (const record of event.Records) {
     const messageBody = JSON.parse(record.body);
-    const { username, email, emailId, secretCode } = messageBody;
+    const { Username: username, Email: email, Email_id: emailId, SecretCode: secretCode } = messageBody;
 
     const secretValue = await secretsManager.getSecretValue({ SecretId: 'secretsForEnv' }).promise();
     const secrets = JSON.parse(secretValue.SecretString);
@@ -21,7 +21,7 @@ exports.sendVerificationEmailHandler = async function(event, context) {
         Subject: { Data: process.env.EMAIL_SUBJECT },
         Body: {
           Html: {
-            Data: `Hello ${username},<br><br>Please verify your email by clicking the link below:<br><br><a href="https://${secrets.FRONTEND_DOMAIN}/verify_email?email_id=${emailId}&secret_code=${secretCode}">Verify Email</a>`,
+            Data: `Hello ${username},<br><br>Please verify your email by clicking the link below:<br><br><a href="${secrets.FRONTEND_DOMAIN}/verify_email?email_id=${emailId}&secret_code=${secretCode}">Verify Email</a>`,
           },
         },
       },

@@ -8,15 +8,9 @@ import { EcoEcsFargate } from '../lib/eco-ecs-fargate';
 
 const app = new cdk.App();
 
-const secret = secretsManager.Secret.fromSecretNameV2(
-  app,
-  'secretsForEnv-id',
-  'secretsForEnv',
-);
-
 new EcoEcsFargate(app, 'EcoEcsFargate', {
   env:{
-    account: secret.secretValueFromJson('AWS_ACCOUNT').toString(),
-    region: secret.secretValueFromJson('AWS_REGION').toString()
+    account: process.env.CDK_DEFAULT_ACCOUNT,
+    region: process.env.CDK_DEFAULT_REGION,
   }
 });

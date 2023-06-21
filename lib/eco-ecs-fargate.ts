@@ -5,6 +5,8 @@ import {
     aws_ecr as ecr,
     aws_rds as rds,
     aws_sqs as sqs,
+    aws_sns as sns,
+    aws_sns_subscriptions as subs,
     aws_iam as iam,
     aws_secretsmanager as sm,
     aws_lambda as lambda,
@@ -30,7 +32,7 @@ export class EcoEcsFargate extends Stack {
       const queue = new sqs.Queue(this, 'email-sending-queue', {
         visibilityTimeout: Duration.seconds(300),  // Maximum time that the Lambda function needs to process a message
         queueName: "email-sending-queue",
-    });
+      });
       
     const secret = sm.Secret.fromSecretNameV2(this, 'Secret', 'secretsForEnv');
     const lambdaFn = new lambda.Function(this, 'SendVerificationEmailFunction', {
@@ -38,7 +40,7 @@ export class EcoEcsFargate extends Stack {
       handler: 'sendVerificationEmail.sendVerificationEmailHandler',
       code: lambda.Code.fromAsset('lambda'),
       timeout: Duration.seconds(10),
-      retryAttempts: 3,
+      retryAttempts: 2,
       environment: {
         EMAIL_SUBJECT: "Welcome to Economi School",
       }
@@ -160,6 +162,31 @@ export class EcoEcsFargate extends Stack {
     // RDS定義の後に追加
     // SecretsManager(RDSにより自動設定)
     const secretsmanager = rdsCluster.secret!;
+
+    // Adding bastion host after the VPC definition
+    const bastionSecurityGroup = new ec2.SecurityGroup(this, 'BastionSecurityGroup', {
+      vpc,
+      allowAllOutbound: true,
+    });
+
+    // const myIpv4Address = secret.secretValueFromJson('MY_IPV4').toString();
+
+     // Allow SSH access from my IP address(caution: my ip is ephemeral)
+    // bastionSecurityGroup.addIngressRule(
+    //   ec2.Peer.ipv4(secret.secretValueFromJson('MY_IPV4').toString()), 
+    //   ec2.Port.tcp(22),
+    //   );
+    bastionSecurityGroup.addIngressRule(ec2.Peer.anyIpv4(), ec2.Port.tcp(22), 'allow ssh access from the world');
+
+    const bastion = new ec2.BastionHostLinux(this, 'BastionHost', {
+      vpc,
+      securityGroup: bastionSecurityGroup,
+      subnetSelection: { subnetType: ec2.SubnetType.PUBLIC },
+    });
+
+    // Allow bastion host to connect to RDS
+    securityGroupRDS.connections.allowFrom(bastionSecurityGroup, ec2.Port.tcp(5432), 'allow postgres from bastion host');
+
   
       // ECS Cluster
       const cluster = new ecs.Cluster(this, 'Cluster', {
@@ -168,6 +195,19 @@ export class EcoEcsFargate extends Stack {
       cluster.enableFargateCapacityProviders()
       const ecrRepository = ecr.Repository.fromRepositoryName(this, 'ExistingRepository', 'economic-school');
   
+      // ECSタスクがSQSキューにメッセージを送信できるようにロールを作成する
+      const taskRole = new iam.Role(this, 'TaskRole', {
+        assumedBy: new iam.ServicePrincipal('ecs-tasks.amazonaws.com'),
+      });
+
+      const sqsPolicyStatement = new iam.PolicyStatement({
+        effect: iam.Effect.ALLOW,
+        actions: ['sqs:SendMessage'],
+        resources: [queue.queueArn]
+      });
+
+      taskRole.addToPolicy(sqsPolicyStatement);
+
       // Fargate
       const fargateTaskDefinition = new ecs.FargateTaskDefinition(
         this,
@@ -175,13 +215,14 @@ export class EcoEcsFargate extends Stack {
         {
           memoryLimitMiB: 512,
           cpu: 256,
+          taskRole: taskRole,
         },
       );
       const container = fargateTaskDefinition.addContainer('AppContainer', {
         image: ecs.ContainerImage.fromEcrRepository(ecrRepository, 'latest'),
         logging: ecs.LogDrivers.awsLogs({
           streamPrefix: 'go-app',
-          logRetention: log.RetentionDays.ONE_MONTH,
+          logRetention: log.RetentionDays.FIVE_DAYS,
         }),
         secrets: {
             dbname: ecs.Secret.fromSecretsManager(secretsmanager, 'dbname'),
@@ -221,6 +262,41 @@ export class EcoEcsFargate extends Stack {
           new route53Targets.LoadBalancerTarget(alb),
         ),
       });
+
+      // バウンスメール送信管理のlambda実装
+
+      // SNS Topicを作成
+      const topic = new sns.Topic(this, 'BounceNotificationTopic');
+
+      // Lambda関数を作成
+      const bounceHandlerLambda = new lambda.Function(this, 'BounceHandler', {
+        runtime: lambda.Runtime.NODEJS_14_X,
+        handler: 'insertBounceMailCount.bounceHandler',
+        code: lambda.Code.fromAsset('lambda'),
+        timeout: Duration.seconds(10),
+        environment: {
+          EMAIL_LOGS_TABLE: "email_logs",  
+          SECRET_NAME: rdsCluster.secret!.secretName  // RDSのシークレット名を設定
+        }
+      });
+
+
+      // SNS TopicへのLambda関数のサブスクリプションを作成
+      topic.addSubscription(new subs.LambdaSubscription(bounceHandlerLambda));
+  
+      // RDSへのLambda関数のアクセス許可を設定
+      const rdsAccessPolicyStatement = new iam.PolicyStatement({
+        effect: iam.Effect.ALLOW,
+        actions: ['rds-data:ExecuteStatement'],
+        resources: ['*']
+      });
+      bounceHandlerLambda.addToRolePolicy(rdsAccessPolicyStatement);
+  
+      // Lambda関数へのSecretsManagerからの読み取り許可を設定
+      secret.grantRead(bounceHandlerLambda);
+  
+
+
 
 
     }
