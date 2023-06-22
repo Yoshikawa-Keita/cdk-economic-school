@@ -7,6 +7,8 @@ import {
     aws_sqs as sqs,
     aws_sns as sns,
     aws_sns_subscriptions as subs,
+    aws_events as events,
+    aws_events_targets as targets,
     aws_iam as iam,
     aws_secretsmanager as sm,
     aws_lambda as lambda,
@@ -207,6 +209,73 @@ export class EcoEcsFargate extends Stack {
       });
 
       taskRole.addToPolicy(sqsPolicyStatement);
+
+      // batch container
+      // バッチ処理のタスクロールを作成
+      const batchTaskRole = new iam.Role(this, 'BatchTaskRole', {
+        assumedBy: new iam.ServicePrincipal('ecs-tasks.amazonaws.com'),
+      });
+
+      // RDSとの通信を許可するポリシーをタスクロールに追加
+      const rdsPolicyStatement = new iam.PolicyStatement({
+        effect: iam.Effect.ALLOW,
+        actions: ['rds-data:*'],
+        resources: ['*']
+      });
+      batchTaskRole.addToPolicy(rdsPolicyStatement);
+
+      // バッチ処理用のコンテナイメージ
+      const ecrRepositoryForBatch = ecr.Repository.fromRepositoryName(this, 'ExistingRepositoryForBatch', 'batch-economic-school');
+      // バッチ処理のタスク定義を作成
+      const batchTaskDefinition = new ecs.FargateTaskDefinition(
+        this,
+        'BatchTaskDef',
+        {
+            memoryLimitMiB: 512,
+            cpu: 256,
+            taskRole: batchTaskRole,
+            executionRole: batchTaskRole,
+        },
+      );
+      const batchContainer = batchTaskDefinition.addContainer('BatchContainer', {
+        image: ecs.ContainerImage.fromEcrRepository(ecrRepositoryForBatch, 'latest'),
+        logging: ecs.LogDrivers.awsLogs({
+            streamPrefix: 'batch-app',
+            logRetention: log.RetentionDays.ONE_MONTH,
+        }),
+        secrets: {
+            dbname: ecs.Secret.fromSecretsManager(secretsmanager, 'dbname'),
+            username: ecs.Secret.fromSecretsManager(
+                secretsmanager,
+                'username'
+            ),
+            host: ecs.Secret.fromSecretsManager(secretsmanager, 'host'),
+            port: ecs.Secret.fromSecretsManager(secretsmanager, 'port'),
+            password: ecs.Secret.fromSecretsManager(
+                secretsmanager,
+                'password'
+            ),
+        }
+      });
+
+      const rule = new events.Rule(this, 'ScheduleRule', {
+        schedule: events.Schedule.cron({ 
+          // Every Sunday at 11:00am UTC, which is 8:00pm JST
+          minute: '0',
+          hour: '11',
+          weekDay: 'SUN',
+        }),
+      });
+      
+      rule.addTarget(new targets.EcsTask({
+        cluster,  // ECS cluster
+        taskDefinition: batchTaskDefinition,
+        subnetSelection: { subnetType: ec2.SubnetType.PRIVATE_ISOLATED }, // or PRIVATE depending on your setup
+      }));
+
+
+      // batch container end
+
 
       // Fargate
       const fargateTaskDefinition = new ecs.FargateTaskDefinition(
