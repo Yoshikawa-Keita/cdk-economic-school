@@ -37,6 +37,8 @@ export class EcoEcsFargate extends Stack {
       });
       
     const secret = sm.Secret.fromSecretNameV2(this, 'Secret', 'secretsForEnv');
+
+    // 新規登録メール認証lambda
     const lambdaFn = new lambda.Function(this, 'SendVerificationEmailFunction', {
       runtime: lambda.Runtime.NODEJS_14_X,
       handler: 'sendVerificationEmail.sendVerificationEmailHandler',
@@ -60,6 +62,31 @@ export class EcoEcsFargate extends Stack {
       });
 
       lambdaFn.addToRolePolicy(policyStatement);
+
+      // パスワード再設定lambda
+      const lambdaFnForPassReset = new lambda.Function(this, 'SendPasswordResetEmailFunction', {
+        runtime: lambda.Runtime.NODEJS_14_X,
+        handler: 'sendPasswordResetEmail.sendPasswordResetEmailHandler',
+        code: lambda.Code.fromAsset('lambda'),
+        timeout: Duration.seconds(10),
+        retryAttempts: 2,
+        environment: {
+          EMAIL_SUBJECT: "Please reset your password",
+        }
+      });
+      
+       secret.grantRead(lambdaFnForPassReset);
+      
+        
+       lambdaFnForPassReset.addEventSource(new aws_lambda_event_sources.SqsEventSource(queue));
+        
+        const policyStatementForpassReset = new iam.PolicyStatement({
+          effect: iam.Effect.ALLOW,
+          actions: ['ses:SendEmail', 'ses:SendRawEmail'],
+          resources: ['*']
+        });
+  
+        lambdaFnForPassReset.addToRolePolicy(policyStatementForpassReset);
 
 
       // ECS on FARGATE関連のリソース
@@ -97,6 +124,9 @@ export class EcoEcsFargate extends Stack {
   
       const securityGroupApp = new ec2.SecurityGroup(this, 'SecurityGroupApp', {
         vpc,
+      });
+      const securityGroupbatch = new ec2.SecurityGroup(this, 'BatchSecurityGroup', {
+        vpc, // Your VPC
       });
   
       const hostedZone = route53.HostedZone.fromLookup(this, 'HostedZone', {
@@ -146,7 +176,7 @@ export class EcoEcsFargate extends Stack {
       });
       
       securityGroupRDS.connections.allowFrom(securityGroupApp, ec2.Port.tcp(5432), 'Ingress 5432 from ECS');
-  
+      securityGroupRDS.connections.allowFrom(securityGroupbatch, ec2.Port.tcp(5432), 'Allow batch tasks to access RDS');
       const rdsCluster = new rds.DatabaseCluster(this, 'EcoRds', {
         engine: rds.DatabaseClusterEngine.auroraPostgres({ version: rds.AuroraPostgresEngineVersion.VER_15_2 }),
         vpcSubnets: {
@@ -270,6 +300,7 @@ export class EcoEcsFargate extends Stack {
       rule.addTarget(new targets.EcsTask({
         cluster,  // ECS cluster
         taskDefinition: batchTaskDefinition,
+        securityGroups: [securityGroupbatch],
         subnetSelection: { subnetType: ec2.SubnetType.PRIVATE_ISOLATED }, // or PRIVATE depending on your setup
       }));
 
@@ -363,10 +394,6 @@ export class EcoEcsFargate extends Stack {
   
       // Lambda関数へのSecretsManagerからの読み取り許可を設定
       secret.grantRead(bounceHandlerLambda);
-  
-
-
-
 
     }
 }
