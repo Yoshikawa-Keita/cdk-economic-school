@@ -39,7 +39,7 @@ export class EcoEcsFargate extends Stack {
     const secret = sm.Secret.fromSecretNameV2(this, 'Secret', 'secretsForEnv');
 
     // 新規登録メール認証lambda
-    const lambdaFn = new lambda.Function(this, 'SendVerificationEmailFunction', {
+    const lambdaFnForRegister = new lambda.Function(this, 'SendVerificationEmailFunction', {
       runtime: lambda.Runtime.NODEJS_14_X,
       handler: 'sendVerificationEmail.sendVerificationEmailHandler',
       code: lambda.Code.fromAsset('lambda'),
@@ -50,10 +50,9 @@ export class EcoEcsFargate extends Stack {
       }
     });
     
-     secret.grantRead(lambdaFn);
-    
-      
-      lambdaFn.addEventSource(new aws_lambda_event_sources.SqsEventSource(queue));
+     secret.grantRead(lambdaFnForRegister);
+
+      // lambdaFn.addEventSource(new aws_lambda_event_sources.SqsEventSource(queue));
       
       const policyStatement = new iam.PolicyStatement({
         effect: iam.Effect.ALLOW,
@@ -61,7 +60,7 @@ export class EcoEcsFargate extends Stack {
         resources: ['*']
       });
 
-      lambdaFn.addToRolePolicy(policyStatement);
+      lambdaFnForRegister.addToRolePolicy(policyStatement);
 
       // パスワード再設定lambda
       const lambdaFnForPassReset = new lambda.Function(this, 'SendPasswordResetEmailFunction', {
@@ -78,7 +77,7 @@ export class EcoEcsFargate extends Stack {
        secret.grantRead(lambdaFnForPassReset);
       
         
-       lambdaFnForPassReset.addEventSource(new aws_lambda_event_sources.SqsEventSource(queue));
+      //  lambdaFnForPassReset.addEventSource(new aws_lambda_event_sources.SqsEventSource(queue));
         
         const policyStatementForpassReset = new iam.PolicyStatement({
           effect: iam.Effect.ALLOW,
@@ -87,6 +86,56 @@ export class EcoEcsFargate extends Stack {
         });
   
         lambdaFnForPassReset.addToRolePolicy(policyStatementForpassReset);
+      
+      // メールアドレス変更認証用lambda
+const lambdaFnForChangeEmail = new lambda.Function(this, 'SendChangeEmailFunction', {
+  runtime: lambda.Runtime.NODEJS_14_X,
+  handler: 'sendChangeEmail.sendChangeEmailHandler',
+  code: lambda.Code.fromAsset('lambda'),
+  timeout: Duration.seconds(10),
+  retryAttempts: 2,
+  environment: {
+    EMAIL_SUBJECT: "Please verify your new email",
+  }
+});
+
+// Secrets Managerからの読み取り権限を付与します。
+secret.grantRead(lambdaFnForChangeEmail);
+
+// SQSイベントソースを追加します。
+// lambdaFnForChangeEmail.addEventSource(new aws_lambda_event_sources.SqsEventSource(queue));
+
+// SESへのEmail送信権限を付与します。
+const policyStatementForChangeEmail = new iam.PolicyStatement({
+  effect: iam.Effect.ALLOW,
+  actions: ['ses:SendEmail', 'ses:SendRawEmail'],
+  resources: ['*']
+});
+
+lambdaFnForChangeEmail.addToRolePolicy(policyStatementForChangeEmail);
+
+// Email Facade lambda
+const lambdaFnForCentralEmailProcessor = new lambda.Function(this, 'EmailFacade', {
+  runtime: lambda.Runtime.NODEJS_14_X,
+  handler: 'emailFacade.emailFacadeHandler',
+  code: lambda.Code.fromAsset('lambda'),
+  timeout: Duration.seconds(10),
+  retryAttempts: 2
+});
+
+// SQSイベントソースを追加します。
+lambdaFnForCentralEmailProcessor.addEventSource(new aws_lambda_event_sources.SqsEventSource(queue));
+
+const policyStatementForCentralProcessor = new iam.PolicyStatement({
+  effect: iam.Effect.ALLOW,
+  actions: ['lambda:InvokeFunction'],
+  resources: ['*']
+});
+
+lambdaFnForCentralEmailProcessor.addToRolePolicy(policyStatementForCentralProcessor);
+
+
+
 
 
       // ECS on FARGATE関連のリソース
