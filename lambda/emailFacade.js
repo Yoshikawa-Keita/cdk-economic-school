@@ -4,54 +4,30 @@ const lambda = new AWS.Lambda();
 exports.emailFacadeHandler = async (event) => {
   for (let record of event.Records) {
     let body = JSON.parse(record.body);
+    let functionName;
     switch(body.EmailType) {
       case 'REGISTER':
-        {
-          const invokeParams = {
-            FunctionName: 'sendVerificationEmailHandler',
-            InvocationType: 'Event',
-            Payload: JSON.stringify({ Records: [record] }),
-          };
-          try {
-            await lambda.invoke(invokeParams).promise();
-          } catch (err) {
-            console.error(`Error invoking sendVerificationEmailHandler: ${err}`);
-            throw err;
-          }
-        }
+        functionName = process.env.REGISTER_FUNCTION_ARN;
         break;
       case 'CHANGE_PASSWORD':
-        {
-          const invokeParams = {
-            FunctionName: 'sendPasswordResetEmailHandler',
-            InvocationType: 'Event',
-            Payload: JSON.stringify({ Records: [record] }),
-          };
-          try {
-            await lambda.invoke(invokeParams).promise();
-          } catch (err) {
-            console.error(`Error invoking sendPasswordResetEmailHandler: ${err}`);
-            throw err;
-          }
-        }
+        functionName = process.env.PASSWORD_RESET_FUNCTION_ARN;
         break;
       case 'CHANGE_EMAIL':
-        {
-          const invokeParams = {
-            FunctionName: 'sendChangeEmailHandler',
-            InvocationType: 'Event',
-            Payload: JSON.stringify({ Records: [record] }),
-          };
-          try {
-            await lambda.invoke(invokeParams).promise();
-          } catch (err) {
-            console.error(`Error invoking sendChangeEmailHandler: ${err}`);
-            throw err;
-          }
-        }
+        functionName = process.env.CHANGE_EMAIL_FUNCTION_ARN;
         break;
       default:
         console.error(`Unknown email type: ${body.EmailType}`);
+    }
+    const invokeParams = {
+      FunctionName: functionName,
+      InvocationType: 'Event',
+      Payload: JSON.stringify({ Records: [record] }),
+    };
+    try {
+      await lambda.invoke(invokeParams).promise();
+    } catch (err) {
+      console.error(`Error invoking ${functionName}: ${err}`);
+      throw err;
     }
   }
 };

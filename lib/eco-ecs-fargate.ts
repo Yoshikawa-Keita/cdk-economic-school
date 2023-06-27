@@ -115,16 +115,21 @@ const policyStatementForChangeEmail = new iam.PolicyStatement({
 lambdaFnForChangeEmail.addToRolePolicy(policyStatementForChangeEmail);
 
 // Email Facade lambda
-const lambdaFnForCentralEmailProcessor = new lambda.Function(this, 'EmailFacade', {
+const lambdaFnForEmailFacade = new lambda.Function(this, 'EmailFacade', {
   runtime: lambda.Runtime.NODEJS_14_X,
   handler: 'emailFacade.emailFacadeHandler',
   code: lambda.Code.fromAsset('lambda'),
   timeout: Duration.seconds(10),
-  retryAttempts: 2
+  retryAttempts: 2,
+  environment: {
+    REGISTER_FUNCTION_ARN: lambdaFnForRegister.functionArn,
+    PASSWORD_RESET_FUNCTION_ARN: lambdaFnForPassReset.functionArn,
+    CHANGE_EMAIL_FUNCTION_ARN: lambdaFnForChangeEmail.functionArn,
+  },
 });
 
 // SQSイベントソースを追加します。
-lambdaFnForCentralEmailProcessor.addEventSource(new aws_lambda_event_sources.SqsEventSource(queue));
+lambdaFnForEmailFacade.addEventSource(new aws_lambda_event_sources.SqsEventSource(queue));
 
 const policyStatementForCentralProcessor = new iam.PolicyStatement({
   effect: iam.Effect.ALLOW,
@@ -132,7 +137,7 @@ const policyStatementForCentralProcessor = new iam.PolicyStatement({
   resources: ['*']
 });
 
-lambdaFnForCentralEmailProcessor.addToRolePolicy(policyStatementForCentralProcessor);
+lambdaFnForEmailFacade.addToRolePolicy(policyStatementForCentralProcessor);
 
 
 
