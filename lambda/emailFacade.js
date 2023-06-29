@@ -15,6 +15,9 @@ exports.emailFacadeHandler = async (event) => {
       case 'CHANGE_EMAIL':
         functionName = process.env.CHANGE_EMAIL_FUNCTION_ARN;
         break;
+      case 'DELETE_USER':
+        functionName = process.env.DELETE_USER_FUNCTION_ARN;
+        break;
       default:
         console.error(`Unknown email type: ${body.EmailType}`);
     }
