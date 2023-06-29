@@ -52,8 +52,6 @@ export class EcoEcsFargate extends Stack {
     
      secret.grantRead(lambdaFnForRegister);
 
-      // lambdaFn.addEventSource(new aws_lambda_event_sources.SqsEventSource(queue));
-      
       const policyStatement = new iam.PolicyStatement({
         effect: iam.Effect.ALLOW,
         actions: ['ses:SendEmail', 'ses:SendRawEmail'],
@@ -75,9 +73,6 @@ export class EcoEcsFargate extends Stack {
       });
       
        secret.grantRead(lambdaFnForPassReset);
-      
-        
-      //  lambdaFnForPassReset.addEventSource(new aws_lambda_event_sources.SqsEventSource(queue));
         
         const policyStatementForpassReset = new iam.PolicyStatement({
           effect: iam.Effect.ALLOW,
@@ -87,7 +82,7 @@ export class EcoEcsFargate extends Stack {
   
         lambdaFnForPassReset.addToRolePolicy(policyStatementForpassReset);
       
-      // メールアドレス変更認証用lambda
+  // メールアドレス変更認証用lambda
 const lambdaFnForChangeEmail = new lambda.Function(this, 'SendChangeEmailFunction', {
   runtime: lambda.Runtime.NODEJS_14_X,
   handler: 'sendChangeEmail.sendChangeEmailHandler',
@@ -102,9 +97,6 @@ const lambdaFnForChangeEmail = new lambda.Function(this, 'SendChangeEmailFunctio
 // Secrets Managerからの読み取り権限を付与します。
 secret.grantRead(lambdaFnForChangeEmail);
 
-// SQSイベントソースを追加します。
-// lambdaFnForChangeEmail.addEventSource(new aws_lambda_event_sources.SqsEventSource(queue));
-
 // SESへのEmail送信権限を付与します。
 const policyStatementForChangeEmail = new iam.PolicyStatement({
   effect: iam.Effect.ALLOW,
@@ -113,6 +105,31 @@ const policyStatementForChangeEmail = new iam.PolicyStatement({
 });
 
 lambdaFnForChangeEmail.addToRolePolicy(policyStatementForChangeEmail);
+
+// delete user email
+    // メールアドレス変更認証用lambda
+    const lambdaFnFordeleteUserEmail = new lambda.Function(this, 'SendDeleteUserEmailFunction', {
+      runtime: lambda.Runtime.NODEJS_14_X,
+      handler: 'sendDeleteUserEmail.sendDeleteUserEmailHandler',
+      code: lambda.Code.fromAsset('lambda'),
+      timeout: Duration.seconds(10),
+      retryAttempts: 2,
+      environment: {
+        EMAIL_SUBJECT: "Account deleted",
+      }
+    });
+    
+    // Secrets Managerからの読み取り権限を付与します。
+    secret.grantRead(lambdaFnFordeleteUserEmail);
+    
+    // SESへのEmail送信権限を付与します。
+    const policyStatementForDeleteUserEmail = new iam.PolicyStatement({
+      effect: iam.Effect.ALLOW,
+      actions: ['ses:SendEmail', 'ses:SendRawEmail'],
+      resources: ['*']
+    });
+    
+    lambdaFnFordeleteUserEmail.addToRolePolicy(policyStatementForDeleteUserEmail);
 
 // Email Facade lambda
 const lambdaFnForEmailFacade = new lambda.Function(this, 'EmailFacade', {
@@ -125,6 +142,7 @@ const lambdaFnForEmailFacade = new lambda.Function(this, 'EmailFacade', {
     REGISTER_FUNCTION_ARN: lambdaFnForRegister.functionArn,
     PASSWORD_RESET_FUNCTION_ARN: lambdaFnForPassReset.functionArn,
     CHANGE_EMAIL_FUNCTION_ARN: lambdaFnForChangeEmail.functionArn,
+    DELETE_USER_FUNCTION_ARN: lambdaFnFordeleteUserEmail.functionArn,
   },
 });
 
